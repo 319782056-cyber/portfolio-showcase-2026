@@ -13,7 +13,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://talent.ccwu.cc/og.png" />
     <link rel="canonical" href="https://talent.ccwu.cc/" />
-    <link rel="stylesheet" href="styles.css?v=reader-1" />
+    <link rel="stylesheet" href="styles.css?v=reader-2" />
   </head>
   <body>
     <header class="topbar">
@@ -45,7 +45,7 @@
             <p class="eyebrow">DOCUMENT VIEWER</p>
             <h2 id="viewer-title">在线阅览</h2>
           </div>
-          <p>电脑可使用方向键翻页，手机可以左右滑动</p>
+          <p>可单页左右翻阅，也可切换为上下连续浏览</p>
         </div>
         <div class="reader" id="reader" tabindex="-1" aria-label="作品集在线阅读器">
           <div class="reader-toolbar" role="toolbar" aria-label="PDF 阅读控制">
@@ -61,6 +61,14 @@
               </label>
               <button class="reader-button reader-button-wide" id="next-page" type="button" disabled>
                 下一页 <span aria-hidden="true">→</span>
+              </button>
+            </div>
+            <div class="toolbar-group mode-controls" role="group" aria-label="阅读模式">
+              <button class="reader-button mode-button is-active" id="single-mode" type="button" aria-pressed="true">
+                单页翻阅
+              </button>
+              <button class="reader-button mode-button" id="scroll-mode" type="button" aria-pressed="false">
+                上下浏览
               </button>
             </div>
             <div class="toolbar-group view-controls">
@@ -79,6 +87,7 @@
               <div class="loading-track" aria-hidden="true"><span id="loading-progress"></span></div>
             </div>
             <canvas id="pdf-canvas" aria-label="作品集第 1 页"></canvas>
+            <div class="pdf-scroll-view" id="pdf-scroll-view" aria-label="作品集上下连续浏览" hidden></div>
             <div class="reader-error" id="reader-error" hidden>
               <strong>在线阅读器加载失败</strong>
               <p>你仍然可以下载完整作品集。</p>
@@ -92,7 +101,7 @@
             <button id="mobile-next" type="button" disabled>下一页 →</button>
           </div>
 
-          <p class="swipe-hint">手机左右滑动翻页 · 可横屏或全屏阅读</p>
+          <p class="swipe-hint">单页可左右滑动 · 上下浏览会自动停靠到最近一页</p>
           <noscript><p class="noscript-message">请启用 JavaScript 以在线阅读，或<a href="portfolio.pdf">下载 PDF</a>。</p></noscript>
         </div>
       </section>
@@ -102,6 +111,6 @@
       <p>THANK YOU FOR VIEWING</p>
       <a href="#top">返回顶部 ↑</a>
     </footer>
-    <script type="module" src="viewer.js?v=reader-1"></script>
+    <script type="module" src="viewer.js?v=reader-2"></script>
   </body>
 </html>

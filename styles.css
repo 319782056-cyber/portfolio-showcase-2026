@@ -223,6 +223,7 @@ h1 span {
   top: 76px;
   z-index: 15;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
@@ -254,6 +255,24 @@ h1 span {
 
 .reader-button {
   padding: 0 14px;
+}
+
+.mode-controls {
+  padding: 3px;
+  border: 1px solid rgba(242, 239, 232, 0.18);
+  background: rgba(17, 17, 15, 0.52);
+}
+
+.mode-button {
+  min-width: 86px;
+  min-height: 36px;
+  border-color: transparent;
+}
+
+.mode-button.is-active {
+  border-color: var(--lime);
+  background: var(--lime);
+  color: var(--ink);
 }
 
 .reader-button:hover:not(:disabled),
@@ -349,6 +368,62 @@ h1 span {
 
 #pdf-canvas[hidden] {
   display: none;
+}
+
+.pdf-scroll-view {
+  width: 100%;
+}
+
+.pdf-scroll-view[hidden],
+.scroll-page-canvas[hidden],
+.scroll-page-placeholder[hidden] {
+  display: none;
+}
+
+.reader[data-mode="scroll"] .reader-stage {
+  display: block;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+  touch-action: pan-y;
+}
+
+.scroll-page {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: var(--scroll-slot-height, 680px);
+  padding: 24px;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.scroll-page + .scroll-page {
+  border-top: 1px solid rgba(242, 239, 232, 0.12);
+}
+
+.scroll-page-canvas {
+  display: block;
+  flex: 0 0 auto;
+  background: #ffffff;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.42);
+}
+
+.scroll-page-placeholder {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: min(76%, 520px);
+  aspect-ratio: 16 / 10;
+  border: 1px solid rgba(242, 239, 232, 0.14);
+  color: rgba(242, 239, 232, 0.42);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  background: rgba(17, 17, 15, 0.32);
 }
 
 .reader-loading,
@@ -532,9 +607,21 @@ footer a {
     padding: 8px 10px;
   }
 
+  .mode-controls {
+    order: 3;
+  }
+
+  .mode-button {
+    min-width: 76px;
+    min-height: 36px;
+    padding-inline: 9px;
+    font-size: 0.72rem;
+  }
+
   .reader-toolbar .reader-button-wide,
   .view-controls .icon-button,
-  .view-controls .fit-button {
+  .view-controls .fit-button,
+  .view-controls .zoom-value {
     display: none;
   }
 
@@ -551,6 +638,10 @@ footer a {
     align-items: flex-start;
     height: min(68svh, 760px);
     min-height: 460px;
+    padding: 14px;
+  }
+
+  .scroll-page {
     padding: 14px;
   }
 
