@@ -6,7 +6,7 @@ const MANIFEST_URL = "./pdf-pages/manifest.json?v=20260806";
 const PAGE_BASE_URL = "./pdf-pages/";
 const PREVIEW_BASE_URL = "./pdf-pages/previews/";
 const MIN_ZOOM = 0.6;
-const MAX_ZOOM = 2.5;
+const MAX_ZOOM = 5;
 const ZOOM_STEP = 0.15;
 const MAX_CANVAS_DIMENSION = 8192;
 const MAX_CANVAS_AREA = 40_000_000;
@@ -37,7 +37,9 @@ let layoutVersion = 1;
 let pageObserver = null;
 let resizeTimer = null;
 let scrollTimer = null;
+let zoomRenderTimer = null;
 let lastNeighborhoodPage = 1;
+let panState = null;
 const pageRenders = new Map();
 
 function pageGutter() {
@@ -52,12 +54,13 @@ function renderPixelRatio(width, height) {
   const nativeRatio = Math.max(1, window.devicePixelRatio || 1);
   const dimensionRatio = Math.min(MAX_CANVAS_DIMENSION / width, MAX_CANVAS_DIMENSION / height);
   const areaRatio = Math.sqrt(MAX_CANVAS_AREA / Math.max(1, width * height));
-  return Math.max(1, Math.min(nativeRatio, dimensionRatio, areaRatio));
+  return Math.max(0.5, Math.min(nativeRatio, dimensionRatio, areaRatio));
 }
 
 function updateContainerWidth() {
   const width = Math.max(scrollArea.clientWidth, fitWidth() * zoom + pageGutter());
   pagesContainer.style.width = `${Math.round(width)}px`;
+  scrollArea.classList.toggle("is-zoomed", width > scrollArea.clientWidth + 1);
 }
 
 function updateControls() {
@@ -145,6 +148,53 @@ function createPageShells() {
 
 function getPageElement(number) {
   return pagesContainer.querySelector(`[data-page="${number}"]`);
+}
+
+function displayedSurface(pageElement) {
+  return pageElement?.querySelector("canvas:not([hidden])") || pageElement?.querySelector(".page-placeholder");
+}
+
+function surfacePosition(surface) {
+  let left = 0;
+  let top = 0;
+  let element = surface;
+  while (element && element !== scrollArea) {
+    left += element.offsetLeft;
+    top += element.offsetTop;
+    element = element.offsetParent;
+  }
+  return { left, top };
+}
+
+function captureViewportAnchor(clientX, clientY) {
+  const pageElement = getPageElement(currentPage);
+  const surface = displayedSurface(pageElement);
+  if (!surface) return null;
+  const position = surfacePosition(surface);
+  const scrollRect = scrollArea.getBoundingClientRect();
+  const viewportX = Number.isFinite(clientX) ? clientX - scrollRect.left : scrollArea.clientWidth / 2;
+  const viewportY = Number.isFinite(clientY) ? clientY - scrollRect.top : scrollArea.clientHeight / 2;
+  const documentX = scrollArea.scrollLeft + viewportX;
+  const documentY = scrollArea.scrollTop + viewportY;
+  return {
+    page: currentPage,
+    xRatio: Math.min(1, Math.max(0, (documentX - position.left) / Math.max(1, surface.offsetWidth))),
+    yRatio: Math.min(1, Math.max(0, (documentY - position.top) / Math.max(1, surface.offsetHeight))),
+    viewportX,
+    viewportY,
+  };
+}
+
+function restoreViewportAnchor(anchor) {
+  if (!anchor) return;
+  const surface = displayedSurface(getPageElement(anchor.page));
+  if (!surface) return;
+  const position = surfacePosition(surface);
+  scrollArea.scrollTo({
+    left: position.left + surface.offsetWidth * anchor.xRatio - anchor.viewportX,
+    top: position.top + surface.offsetHeight * anchor.yRatio - anchor.viewportY,
+    behavior: "auto",
+  });
 }
 
 function stopRender(record) {
@@ -323,18 +373,30 @@ function invalidateLayout() {
   updateContainerWidth();
   pagesContainer.querySelectorAll(".pdf-page").forEach((pageElement) => {
     delete pageElement.dataset.renderVersion;
+    const number = Number(pageElement.dataset.page);
+    const entry = pageEntries[number - 1];
+    const displayWidth = fitWidth() * zoom;
+    const displayHeight = (displayWidth * entry.height) / entry.width;
     const placeholder = pageElement.querySelector(".page-placeholder");
-    placeholder.style.width = `${Math.round(fitWidth() * zoom)}px`;
+    placeholder.style.width = `${Math.round(displayWidth)}px`;
+    const canvas = pageElement.querySelector("canvas");
+    if (!canvas.hidden) {
+      canvas.style.width = `${Math.round(displayWidth)}px`;
+      canvas.style.height = `${Math.round(displayHeight)}px`;
+    }
   });
 }
 
-function applyZoom(nextZoom) {
-  zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
-  zoom = Math.round(zoom * 100) / 100;
+function applyZoom(nextZoom, clientX, clientY) {
+  const normalizedZoom = Math.round(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom)) * 100) / 100;
+  if (normalizedZoom === zoom) return;
+  const anchor = captureViewportAnchor(clientX, clientY);
+  zoom = normalizedZoom;
   invalidateLayout();
   updateControls();
-  renderNeighborhood(currentPage);
-  requestAnimationFrame(() => jumpToPage(currentPage, "auto"));
+  requestAnimationFrame(() => restoreViewportAnchor(anchor));
+  clearTimeout(zoomRenderTimer);
+  zoomRenderTimer = setTimeout(() => renderNeighborhood(currentPage), 120);
 }
 
 controls.previous.addEventListener("click", () => jumpToPage(currentPage - 1));
@@ -360,6 +422,55 @@ scrollArea.addEventListener(
   { passive: true },
 );
 
+scrollArea.addEventListener(
+  "wheel",
+  (event) => {
+    if (event.ctrlKey) {
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? -1 : 1;
+      applyZoom(zoom + direction * ZOOM_STEP, event.clientX, event.clientY);
+      return;
+    }
+    if (event.shiftKey && scrollArea.scrollWidth > scrollArea.clientWidth) {
+      event.preventDefault();
+      scrollArea.scrollLeft += event.deltaY || event.deltaX;
+    }
+  },
+  { passive: false },
+);
+
+scrollArea.addEventListener("pointerdown", (event) => {
+  if (event.pointerType !== "mouse" || event.button !== 0 || !scrollArea.classList.contains("is-zoomed")) {
+    return;
+  }
+  panState = {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    left: scrollArea.scrollLeft,
+    top: scrollArea.scrollTop,
+  };
+  scrollArea.setPointerCapture(event.pointerId);
+  scrollArea.classList.add("is-panning");
+  event.preventDefault();
+});
+
+scrollArea.addEventListener("pointermove", (event) => {
+  if (!panState || event.pointerId !== panState.pointerId) return;
+  scrollArea.scrollLeft = panState.left - (event.clientX - panState.x);
+  scrollArea.scrollTop = panState.top - (event.clientY - panState.y);
+});
+
+function stopPanning(event) {
+  if (!panState || event.pointerId !== panState.pointerId) return;
+  if (scrollArea.hasPointerCapture(event.pointerId)) scrollArea.releasePointerCapture(event.pointerId);
+  panState = null;
+  scrollArea.classList.remove("is-panning");
+}
+
+scrollArea.addEventListener("pointerup", stopPanning);
+scrollArea.addEventListener("pointercancel", stopPanning);
+
 document.addEventListener("keydown", (event) => {
   if (!pageEntries.length || document.activeElement === pageInput) return;
   if (event.key === "PageUp") {
@@ -380,9 +491,10 @@ const resizeObserver = new ResizeObserver(() => {
   if (!pageEntries.length) return;
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
+    const anchor = captureViewportAnchor();
     invalidateLayout();
     renderNeighborhood(currentPage);
-    requestAnimationFrame(() => jumpToPage(currentPage, "auto"));
+    requestAnimationFrame(() => restoreViewportAnchor(anchor));
   }, 180);
 });
 resizeObserver.observe(scrollArea);

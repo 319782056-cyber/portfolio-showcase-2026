@@ -190,7 +190,34 @@ button:disabled {
   overscroll-behavior: contain;
   scrollbar-gutter: stable both-edges;
   background: var(--viewer);
+  scrollbar-color: rgba(255, 255, 255, 0.5) rgba(0, 0, 0, 0.2);
+  scrollbar-width: auto;
   touch-action: pan-x pan-y pinch-zoom;
+}
+
+.pdf-scroll::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.pdf-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.pdf-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.5);
+  background-clip: padding-box;
+}
+
+.pdf-scroll.is-zoomed {
+  cursor: grab;
+}
+
+.pdf-scroll.is-panning {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .pdf-pages {
@@ -209,6 +236,10 @@ button:disabled {
 
 .pdf-page + .pdf-page {
   margin-top: 18px;
+}
+
+.pdf-scroll.is-zoomed .pdf-page {
+  justify-content: flex-start;
 }
 
 .pdf-page canvas,
