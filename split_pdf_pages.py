@@ -37,6 +37,8 @@ def page_stream_hashes(page) -> list[str]:
 
 
 def main() -> None:
+    with SOURCE.open("rb") as source_stream:
+        asset_version = hashlib.file_digest(source_stream, "sha256").hexdigest()[:12]
     reader = PdfReader(str(SOURCE))
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     manifest_pages: list[dict[str, object]] = []
@@ -69,7 +71,11 @@ def main() -> None:
         )
 
     MANIFEST.write_text(
-        json.dumps({"version": 1, "pages": manifest_pages}, ensure_ascii=False, separators=(",", ":")),
+        json.dumps(
+            {"version": asset_version, "pages": manifest_pages},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
         encoding="utf-8",
     )
     largest = max(manifest_pages, key=lambda item: int(item["bytes"]))

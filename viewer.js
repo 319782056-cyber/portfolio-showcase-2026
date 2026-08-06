@@ -4,6 +4,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "./pdfjs/pdf.worker.min.mjs";
 
 const MANIFEST_URL = "./pdf-pages/manifest.json?v=20260806";
 const PAGE_BASE_URL = "./pdf-pages/";
+const PREVIEW_BASE_URL = "./pdf-pages/previews/";
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 0.15;
@@ -29,12 +30,14 @@ const controls = {
 };
 
 let pageEntries = [];
+let assetVersion = "1";
 let currentPage = 1;
 let zoom = 1;
 let layoutVersion = 1;
 let pageObserver = null;
 let resizeTimer = null;
 let scrollTimer = null;
+let lastNeighborhoodPage = 1;
 const pageRenders = new Map();
 
 function pageGutter() {
@@ -71,6 +74,28 @@ function updateControls() {
   zoomLabel.textContent = zoom === 1 ? "适合宽度" : `${Math.round(zoom * 100)}%`;
 }
 
+function versionedAsset(path) {
+  return `${path}?v=${encodeURIComponent(assetVersion)}`;
+}
+
+function waitForFirstPreview(timeout = 1200) {
+  const image = getPageElement(1)?.querySelector(".page-placeholder");
+  if (!image || image.complete) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      image.removeEventListener("load", finish);
+      image.removeEventListener("error", finish);
+      resolve();
+    };
+    image.addEventListener("load", finish, { once: true });
+    image.addEventListener("error", finish, { once: true });
+    window.setTimeout(finish, timeout);
+  });
+}
+
 function createPageShells() {
   const fragment = document.createDocumentFragment();
   pageEntries.forEach((entry, index) => {
@@ -84,9 +109,18 @@ function createPageShells() {
     canvas.hidden = true;
     canvas.setAttribute("aria-label", `作品集第 ${number} 页，共 ${pageEntries.length} 页`);
 
-    const placeholder = document.createElement("span");
+    const placeholder = document.createElement("img");
     placeholder.className = "page-placeholder";
-    placeholder.textContent = `第 ${number} 页`;
+    placeholder.src = versionedAsset(
+      `${PREVIEW_BASE_URL}page-${String(number).padStart(3, "0")}.webp`,
+    );
+    placeholder.alt = "";
+    placeholder.loading = number <= 2 ? "eager" : "lazy";
+    placeholder.decoding = "async";
+    placeholder.draggable = false;
+    placeholder.width = 960;
+    placeholder.height = Math.round((960 * entry.height) / entry.width);
+    if (number === 1) placeholder.fetchPriority = "high";
     placeholder.style.width = `${Math.round(fitWidth() * zoom)}px`;
     placeholder.style.aspectRatio = `${entry.width} / ${entry.height}`;
     placeholder.setAttribute("aria-hidden", "true");
@@ -101,10 +135,10 @@ function createPageShells() {
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return;
         const number = Number(entry.target.dataset.page);
-        renderNeighborhood(number);
+        renderPage(number);
       });
     },
-    { root: scrollArea, rootMargin: "130% 0px", threshold: 0.01 },
+    { root: scrollArea, rootMargin: "55% 0px", threshold: 0.01 },
   );
   pagesContainer.querySelectorAll(".pdf-page").forEach((page) => pageObserver.observe(page));
 }
@@ -122,7 +156,10 @@ function stopRender(record) {
 }
 
 function cancelActiveRenders() {
-  pageRenders.forEach((record) => stopRender(record));
+  pageRenders.forEach((record, number) => {
+    stopRender(record);
+    getPageElement(number)?.classList.remove("is-rendering");
+  });
   pageRenders.clear();
 }
 
@@ -144,10 +181,11 @@ async function renderPage(number) {
     renderTask: null,
     promise: null,
   };
+  pageElement.classList.add("is-rendering");
   record.promise = (async () => {
     const entry = pageEntries[number - 1];
     record.loadingTask = pdfjsLib.getDocument({
-      url: `${PAGE_BASE_URL}${entry.file}`,
+      url: versionedAsset(`${PAGE_BASE_URL}${entry.file}`),
       cMapUrl: "./pdfjs/cmaps/",
       cMapPacked: true,
       standardFontDataUrl: "./pdfjs/standard_fonts/",
@@ -169,15 +207,16 @@ async function renderPage(number) {
     const displayScale = (fitWidth() / naturalViewport.width) * zoom;
     const viewport = page.getViewport({ scale: displayScale });
     const pixelRatio = renderPixelRatio(viewport.width, viewport.height);
-    const canvas = pageElement.querySelector("canvas");
+    const currentCanvas = pageElement.querySelector("canvas");
+    const canvas = document.createElement("canvas");
     const placeholder = pageElement.querySelector(".page-placeholder");
     const context = canvas.getContext("2d", { alpha: false });
 
+    canvas.setAttribute("aria-label", currentCanvas.getAttribute("aria-label"));
     canvas.width = Math.floor(viewport.width * pixelRatio);
     canvas.height = Math.floor(viewport.height * pixelRatio);
     canvas.style.width = `${Math.floor(viewport.width)}px`;
     canvas.style.height = `${Math.floor(viewport.height)}px`;
-    canvas.hidden = false;
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -189,6 +228,7 @@ async function renderPage(number) {
     });
     await record.renderTask.promise;
     if (pageRenders.get(number) !== record) return;
+    currentCanvas.replaceWith(canvas);
     pageElement.dataset.renderVersion = String(version);
     placeholder.hidden = true;
     page.cleanup();
@@ -203,7 +243,10 @@ async function renderPage(number) {
       if (destroyResult && typeof destroyResult.catch === "function") {
         await destroyResult.catch(() => {});
       }
-      if (pageRenders.get(number) === record) pageRenders.delete(number);
+      if (pageRenders.get(number) === record) {
+        pageElement.classList.remove("is-rendering");
+        pageRenders.delete(number);
+      }
     });
 
   pageRenders.set(number, record);
@@ -211,7 +254,12 @@ async function renderPage(number) {
 }
 
 function renderNeighborhood(number) {
-  [number - 2, number - 1, number, number + 1, number + 2].forEach((page) => renderPage(page));
+  const direction = number >= lastNeighborhoodPage ? 1 : -1;
+  lastNeighborhoodPage = number;
+  renderPage(number).then(() => {
+    if (Math.abs(currentPage - number) > 1) return;
+    renderPage(number + direction);
+  });
 }
 
 function evictDistantPages(center, radius = 4) {
@@ -221,6 +269,7 @@ function evictDistantPages(center, radius = 4) {
     const activeRender = pageRenders.get(number);
     if (activeRender) {
       stopRender(activeRender);
+      pageElement.classList.remove("is-rendering");
       pageRenders.delete(number);
     }
     const canvas = pageElement.querySelector("canvas");
@@ -346,6 +395,7 @@ async function initializeViewer() {
     if (!Array.isArray(manifest.pages) || !manifest.pages.length) {
       throw new Error("PDF page manifest is empty");
     }
+    assetVersion = String(manifest.version || "1");
     pageEntries = manifest.pages;
     updateContainerWidth();
     createPageShells();
@@ -354,10 +404,11 @@ async function initializeViewer() {
     controls.zoomIn.disabled = false;
     controls.fitWidth.disabled = false;
     updateControls();
-    await renderPage(1);
-    renderNeighborhood(1);
+    renderPage(1);
+    await waitForFirstPreview();
     loadingPanel.hidden = true;
     scrollArea.setAttribute("aria-busy", "false");
+    renderNeighborhood(1);
   } catch (error) {
     console.error("PDF viewer failed to initialize", error);
     loadingPanel.hidden = true;

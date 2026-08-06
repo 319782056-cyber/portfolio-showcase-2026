@@ -211,7 +211,8 @@ button:disabled {
   margin-top: 18px;
 }
 
-.pdf-page canvas {
+.pdf-page canvas,
+.page-placeholder {
   display: block;
   flex: 0 0 auto;
   background: #ffffff;
@@ -226,13 +227,11 @@ button:disabled {
 }
 
 .page-placeholder {
-  display: grid;
-  place-items: center;
   width: min(78vw, 920px);
+  height: auto;
   aspect-ratio: 16 / 10;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 0.76rem;
+  object-fit: contain;
+  user-select: none;
 }
 
 .loading-panel,

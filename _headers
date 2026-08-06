@@ -1,0 +1,26 @@
+/
+  Cache-Control: no-cache, must-revalidate
+
+/index.html
+  Cache-Control: no-cache, must-revalidate
+
+/viewer.js
+  Cache-Control: no-cache, must-revalidate
+
+/styles.css
+  Cache-Control: no-cache, must-revalidate
+
+/pdf-pages/manifest.json
+  Cache-Control: no-cache, must-revalidate
+
+/pdf-pages/*.pdf
+  Cache-Control: public, max-age=31536000, immutable
+
+/pdf-pages/previews/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/pdfjs/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/og.png
+  Cache-Control: public, max-age=31536000, immutable
