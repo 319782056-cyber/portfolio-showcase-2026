@@ -66,22 +66,72 @@ button:disabled {
 .pdf-toolbar {
   position: relative;
   z-index: 10;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto minmax(260px, 1fr);
   align-items: center;
-  justify-content: center;
-  gap: clamp(16px, 5vw, 64px);
-  min-height: 56px;
-  padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  gap: clamp(16px, 3vw, 48px);
+  min-height: 64px;
+  padding: 9px max(20px, env(safe-area-inset-right)) 9px max(20px, env(safe-area-inset-left));
   border-bottom: 1px solid var(--toolbar-border);
   background: var(--toolbar);
   color: #f1f3f4;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
+.portfolio-brand {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-self: start;
+  gap: 4px;
+  min-width: 0;
+  padding-left: 15px;
+  white-space: nowrap;
+}
+
+.portfolio-brand::before {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 2px;
+  background: linear-gradient(180deg, #d7e6ff 0%, #7faef2 100%);
+  content: "";
+}
+
+.brand-name {
+  color: #ffffff;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+}
+
+.brand-dot {
+  color: #8ab4f8;
+  font-size: 1rem;
+}
+
+.brand-role {
+  color: rgba(241, 243, 244, 0.66);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.74rem;
+  font-style: italic;
+  letter-spacing: 0.12em;
+}
+
 .toolbar-group {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+.page-controls {
+  justify-self: center;
+}
+
+.zoom-controls {
+  justify-self: end;
 }
 
 .page-number {
@@ -217,9 +267,8 @@ button:disabled {
   transition: width 180ms ease;
 }
 
-.error-panel a {
-  color: #aecbfa;
-  text-underline-offset: 4px;
+.error-panel span {
+  color: rgba(255, 255, 255, 0.62);
 }
 
 .visually-hidden {
@@ -236,11 +285,32 @@ button:disabled {
 
 @media (max-width: 600px) {
   .pdf-toolbar {
-    justify-content: space-between;
+    grid-template-columns: 1fr auto;
     gap: 8px;
-    min-height: 50px;
+    min-height: 88px;
     padding-top: calc(7px + env(safe-area-inset-top));
     padding-bottom: 7px;
+  }
+
+  .portfolio-brand {
+    grid-column: 1 / -1;
+    padding-left: 12px;
+  }
+
+  .brand-name {
+    font-size: 0.92rem;
+  }
+
+  .brand-role {
+    font-size: 0.68rem;
+  }
+
+  .page-controls {
+    justify-self: start;
+  }
+
+  .zoom-controls {
+    justify-self: end;
   }
 
   button {
@@ -274,6 +344,27 @@ button:disabled {
 
   .pdf-page + .pdf-page {
     margin-top: 10px;
+  }
+}
+
+@media (min-width: 601px) and (max-width: 780px) {
+  .pdf-toolbar {
+    grid-template-columns: minmax(180px, 1fr) auto auto;
+    gap: 8px;
+    padding-inline: 12px;
+  }
+
+  .brand-name {
+    font-size: 0.92rem;
+  }
+
+  .brand-role {
+    font-size: 0.66rem;
+  }
+
+  #zoom-label,
+  .fit-button {
+    display: none;
   }
 }
 

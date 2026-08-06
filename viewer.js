@@ -2,10 +2,13 @@ import * as pdfjsLib from "./pdfjs/pdf.min.mjs";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "./pdfjs/pdf.worker.min.mjs";
 
-const PDF_URL = "portfolio.pdf";
+const MANIFEST_URL = "./pdf-pages/manifest.json?v=20260806";
+const PAGE_BASE_URL = "./pdf-pages/";
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 0.15;
+const MAX_CANVAS_DIMENSION = 8192;
+const MAX_CANVAS_AREA = 40_000_000;
 
 const scrollArea = document.querySelector("#pdf-scroll");
 const pagesContainer = document.querySelector("#pdf-pages");
@@ -25,10 +28,9 @@ const controls = {
   fitWidth: document.querySelector("#fit-width"),
 };
 
-let pdfDocument = null;
+let pageEntries = [];
 let currentPage = 1;
 let zoom = 1;
-let firstPageRatio = 16 / 10;
 let layoutVersion = 1;
 let pageObserver = null;
 let resizeTimer = null;
@@ -43,14 +45,21 @@ function fitWidth() {
   return Math.max(240, scrollArea.clientWidth - pageGutter());
 }
 
+function renderPixelRatio(width, height) {
+  const nativeRatio = Math.max(1, window.devicePixelRatio || 1);
+  const dimensionRatio = Math.min(MAX_CANVAS_DIMENSION / width, MAX_CANVAS_DIMENSION / height);
+  const areaRatio = Math.sqrt(MAX_CANVAS_AREA / Math.max(1, width * height));
+  return Math.max(1, Math.min(nativeRatio, dimensionRatio, areaRatio));
+}
+
 function updateContainerWidth() {
   const width = Math.max(scrollArea.clientWidth, fitWidth() * zoom + pageGutter());
   pagesContainer.style.width = `${Math.round(width)}px`;
 }
 
 function updateControls() {
-  if (!pdfDocument) return;
-  const total = pdfDocument.numPages;
+  if (!pageEntries.length) return;
+  const total = pageEntries.length;
   pageInput.value = String(currentPage);
   pageInput.max = String(total);
   pageCount.textContent = String(total);
@@ -64,7 +73,8 @@ function updateControls() {
 
 function createPageShells() {
   const fragment = document.createDocumentFragment();
-  for (let number = 1; number <= pdfDocument.numPages; number += 1) {
+  pageEntries.forEach((entry, index) => {
+    const number = index + 1;
     const pageElement = document.createElement("article");
     pageElement.className = "pdf-page";
     pageElement.dataset.page = String(number);
@@ -72,18 +82,18 @@ function createPageShells() {
 
     const canvas = document.createElement("canvas");
     canvas.hidden = true;
-    canvas.setAttribute("aria-label", `作品集第 ${number} 页，共 ${pdfDocument.numPages} 页`);
+    canvas.setAttribute("aria-label", `作品集第 ${number} 页，共 ${pageEntries.length} 页`);
 
     const placeholder = document.createElement("span");
     placeholder.className = "page-placeholder";
     placeholder.textContent = `第 ${number} 页`;
     placeholder.style.width = `${Math.round(fitWidth() * zoom)}px`;
-    placeholder.style.aspectRatio = String(firstPageRatio);
+    placeholder.style.aspectRatio = `${entry.width} / ${entry.height}`;
     placeholder.setAttribute("aria-hidden", "true");
 
     pageElement.append(canvas, placeholder);
     fragment.append(pageElement);
-  }
+  });
   pagesContainer.append(fragment);
 
   pageObserver = new IntersectionObserver(
@@ -103,8 +113,22 @@ function getPageElement(number) {
   return pagesContainer.querySelector(`[data-page="${number}"]`);
 }
 
+function stopRender(record) {
+  record?.renderTask?.cancel();
+  if (record?.document) {
+    record.document.destroy().catch(() => {});
+  } else {
+    record?.loadingTask?.destroy().catch(() => {});
+  }
+}
+
+function cancelActiveRenders() {
+  pageRenders.forEach((record) => stopRender(record));
+  pageRenders.clear();
+}
+
 async function renderPage(number) {
-  if (!pdfDocument || number < 1 || number > pdfDocument.numPages) return;
+  if (number < 1 || number > pageEntries.length) return;
   const pageElement = getPageElement(number);
   if (!pageElement) return;
   const version = layoutVersion;
@@ -112,17 +136,40 @@ async function renderPage(number) {
 
   const existing = pageRenders.get(number);
   if (existing?.version === version) return existing.promise;
-  existing?.task?.cancel();
+  stopRender(existing);
 
-  const record = { version, task: null, promise: null };
+  const record = {
+    version,
+    loadingTask: null,
+    document: null,
+    renderTask: null,
+    promise: null,
+  };
   record.promise = (async () => {
-    const page = await pdfDocument.getPage(number);
-    if (pageRenders.get(number) !== record) return;
+    const entry = pageEntries[number - 1];
+    record.loadingTask = pdfjsLib.getDocument({
+      url: `${PAGE_BASE_URL}${entry.file}`,
+      cMapUrl: "./pdfjs/cmaps/",
+      cMapPacked: true,
+      standardFontDataUrl: "./pdfjs/standard_fonts/",
+      wasmUrl: "./pdfjs/wasm/",
+    });
+    if (number === 1 && !loadingPanel.hidden) {
+      record.loadingTask.onProgress = ({ loaded, total }) => {
+        if (!total) return;
+        const percent = Math.min(100, Math.round((loaded / total) * 100));
+        loadingProgress.style.width = `${percent}%`;
+        loadingLabel.textContent = `正在打开作品集 · ${percent}%`;
+      };
+    }
 
+    record.document = await record.loadingTask.promise;
+    if (pageRenders.get(number) !== record) return;
+    const page = await record.document.getPage(1);
     const naturalViewport = page.getViewport({ scale: 1 });
     const displayScale = (fitWidth() / naturalViewport.width) * zoom;
     const viewport = page.getViewport({ scale: displayScale });
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    const pixelRatio = renderPixelRatio(viewport.width, viewport.height);
     const canvas = pageElement.querySelector("canvas");
     const placeholder = pageElement.querySelector(".page-placeholder");
     const context = canvas.getContext("2d", { alpha: false });
@@ -132,15 +179,16 @@ async function renderPage(number) {
     canvas.style.width = `${Math.floor(viewport.width)}px`;
     canvas.style.height = `${Math.floor(viewport.height)}px`;
     canvas.hidden = false;
+    context.setTransform(1, 0, 0, 1, 0, 0);
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
 
-    record.task = page.render({
+    record.renderTask = page.render({
       canvasContext: context,
       viewport,
       transform: pixelRatio === 1 ? null : [pixelRatio, 0, 0, pixelRatio, 0, 0],
     });
-    await record.task.promise;
+    await record.renderTask.promise;
     if (pageRenders.get(number) !== record) return;
     pageElement.dataset.renderVersion = String(version);
     placeholder.hidden = true;
@@ -151,7 +199,8 @@ async function renderPage(number) {
         console.error(`PDF page ${number} failed to render`, error);
       }
     })
-    .finally(() => {
+    .finally(async () => {
+      if (record.document) await record.document.destroy().catch(() => {});
       if (pageRenders.get(number) === record) pageRenders.delete(number);
     });
 
@@ -163,10 +212,31 @@ function renderNeighborhood(number) {
   [number - 2, number - 1, number, number + 1, number + 2].forEach((page) => renderPage(page));
 }
 
+function evictDistantPages(center, radius = 4) {
+  pagesContainer.querySelectorAll(".pdf-page").forEach((pageElement) => {
+    const number = Number(pageElement.dataset.page);
+    if (Math.abs(number - center) <= radius) return;
+    const activeRender = pageRenders.get(number);
+    if (activeRender) {
+      stopRender(activeRender);
+      pageRenders.delete(number);
+    }
+    const canvas = pageElement.querySelector("canvas");
+    if (!canvas.hidden) {
+      canvas.width = 1;
+      canvas.height = 1;
+      canvas.hidden = true;
+      pageElement.querySelector(".page-placeholder").hidden = false;
+      delete pageElement.dataset.renderVersion;
+    }
+  });
+}
+
 function jumpToPage(number, behavior = "smooth") {
-  if (!pdfDocument) return;
-  currentPage = Math.min(pdfDocument.numPages, Math.max(1, Number(number) || 1));
+  if (!pageEntries.length) return;
+  currentPage = Math.min(pageEntries.length, Math.max(1, Number(number) || 1));
   updateControls();
+  evictDistantPages(currentPage);
   renderNeighborhood(currentPage);
   const pageElement = getPageElement(currentPage);
   if (!pageElement) return;
@@ -174,7 +244,7 @@ function jumpToPage(number, behavior = "smooth") {
 }
 
 function syncCurrentPage() {
-  if (!pdfDocument) return;
+  if (!pageEntries.length) return;
   const viewportCenter = scrollArea.scrollTop + scrollArea.clientHeight / 2;
   let nearest = currentPage;
   let nearestDistance = Number.POSITIVE_INFINITY;
@@ -192,19 +262,25 @@ function syncCurrentPage() {
     currentPage = nearest;
     updateControls();
   }
+  evictDistantPages(currentPage);
   renderNeighborhood(currentPage);
 }
 
-function applyZoom(nextZoom) {
-  zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
-  zoom = Math.round(zoom * 100) / 100;
+function invalidateLayout() {
   layoutVersion += 1;
+  cancelActiveRenders();
   updateContainerWidth();
   pagesContainer.querySelectorAll(".pdf-page").forEach((pageElement) => {
     delete pageElement.dataset.renderVersion;
     const placeholder = pageElement.querySelector(".page-placeholder");
     placeholder.style.width = `${Math.round(fitWidth() * zoom)}px`;
   });
+}
+
+function applyZoom(nextZoom) {
+  zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
+  zoom = Math.round(zoom * 100) / 100;
+  invalidateLayout();
   updateControls();
   renderNeighborhood(currentPage);
   requestAnimationFrame(() => jumpToPage(currentPage, "auto"));
@@ -234,7 +310,7 @@ scrollArea.addEventListener(
 );
 
 document.addEventListener("keydown", (event) => {
-  if (!pdfDocument || document.activeElement === pageInput) return;
+  if (!pageEntries.length || document.activeElement === pageInput) return;
   if (event.key === "PageUp") {
     event.preventDefault();
     jumpToPage(currentPage - 1);
@@ -244,22 +320,16 @@ document.addEventListener("keydown", (event) => {
     jumpToPage(currentPage + 1);
   }
   if (event.key === "Home") jumpToPage(1);
-  if (event.key === "End") jumpToPage(pdfDocument.numPages);
+  if (event.key === "End") jumpToPage(pageEntries.length);
   if (event.key === "+" || event.key === "=") applyZoom(zoom + ZOOM_STEP);
   if (event.key === "-") applyZoom(zoom - ZOOM_STEP);
 });
 
 const resizeObserver = new ResizeObserver(() => {
-  if (!pdfDocument) return;
+  if (!pageEntries.length) return;
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
-    layoutVersion += 1;
-    updateContainerWidth();
-    pagesContainer.querySelectorAll(".pdf-page").forEach((pageElement) => {
-      delete pageElement.dataset.renderVersion;
-      const placeholder = pageElement.querySelector(".page-placeholder");
-      placeholder.style.width = `${Math.round(fitWidth() * zoom)}px`;
-    });
+    invalidateLayout();
     renderNeighborhood(currentPage);
     requestAnimationFrame(() => jumpToPage(currentPage, "auto"));
   }, 180);
@@ -268,25 +338,13 @@ resizeObserver.observe(scrollArea);
 
 async function initializeViewer() {
   try {
-    const loadingTask = pdfjsLib.getDocument({
-      url: PDF_URL,
-      cMapUrl: "./pdfjs/cmaps/",
-      cMapPacked: true,
-      standardFontDataUrl: "./pdfjs/standard_fonts/",
-      wasmUrl: "./pdfjs/wasm/",
-    });
-
-    loadingTask.onProgress = ({ loaded, total }) => {
-      if (!total) return;
-      const percent = Math.min(100, Math.round((loaded / total) * 100));
-      loadingProgress.style.width = `${percent}%`;
-      loadingLabel.textContent = `正在打开 PDF · ${percent}%`;
-    };
-
-    pdfDocument = await loadingTask.promise;
-    const firstPage = await pdfDocument.getPage(1);
-    const firstViewport = firstPage.getViewport({ scale: 1 });
-    firstPageRatio = firstViewport.width / firstViewport.height;
+    const response = await fetch(MANIFEST_URL, { cache: "no-cache" });
+    if (!response.ok) throw new Error(`Manifest request failed: ${response.status}`);
+    const manifest = await response.json();
+    if (!Array.isArray(manifest.pages) || !manifest.pages.length) {
+      throw new Error("PDF page manifest is empty");
+    }
+    pageEntries = manifest.pages;
     updateContainerWidth();
     createPageShells();
     pageInput.disabled = false;

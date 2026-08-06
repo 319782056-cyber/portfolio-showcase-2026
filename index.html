@@ -3,21 +3,27 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>个人作品集</title>
-    <meta name="description" content="个人作品集 PDF 在线阅览。" />
-    <meta property="og:title" content="个人作品集" />
-    <meta property="og:description" content="在线浏览个人作品集 PDF。" />
+    <title>张意晗·Portfolio</title>
+    <meta name="description" content="张意晗个人作品集 PDF 在线阅览。" />
+    <meta property="og:title" content="张意晗·Portfolio" />
+    <meta property="og:description" content="在线浏览张意晗个人作品集。" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://talent.ccwu.cc/" />
     <meta property="og:image" content="https://talent.ccwu.cc/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://talent.ccwu.cc/og.png" />
     <link rel="canonical" href="https://talent.ccwu.cc/" />
-    <link rel="stylesheet" href="styles.css?v=pdf-only-1" />
+    <link rel="stylesheet" href="styles.css?v=portfolio-2" />
   </head>
   <body>
     <main class="pdf-viewer" aria-label="个人作品集 PDF 阅读器">
       <header class="pdf-toolbar" role="toolbar" aria-label="PDF 阅读控制">
+        <div class="portfolio-brand" aria-label="张意晗·Portfolio">
+          <span class="brand-name">张意晗</span>
+          <span class="brand-dot" aria-hidden="true">·</span>
+          <span class="brand-role">Portfolio</span>
+        </div>
+
         <div class="toolbar-group page-controls">
           <button id="previous-page" type="button" aria-label="上一页" disabled>‹</button>
           <label class="page-number" for="page-input">
@@ -47,11 +53,11 @@
 
         <div class="error-panel" id="error-panel" hidden>
           <strong>PDF 暂时无法显示</strong>
-          <a href="portfolio.pdf">打开原始 PDF</a>
+          <span>请刷新页面后重试</span>
         </div>
       </section>
     </main>
 
-    <script type="module" src="viewer.js?v=pdf-only-1"></script>
+    <script type="module" src="viewer.js?v=portfolio-2"></script>
   </body>
 </html>
