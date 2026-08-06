@@ -115,10 +115,9 @@ function getPageElement(number) {
 
 function stopRender(record) {
   record?.renderTask?.cancel();
-  if (record?.document) {
-    record.document.destroy().catch(() => {});
-  } else {
-    record?.loadingTask?.destroy().catch(() => {});
+  const destroyResult = record?.loadingTask?.destroy?.();
+  if (destroyResult && typeof destroyResult.catch === "function") {
+    destroyResult.catch(() => {});
   }
 }
 
@@ -200,7 +199,10 @@ async function renderPage(number) {
       }
     })
     .finally(async () => {
-      if (record.document) await record.document.destroy().catch(() => {});
+      const destroyResult = record.loadingTask?.destroy?.();
+      if (destroyResult && typeof destroyResult.catch === "function") {
+        await destroyResult.catch(() => {});
+      }
       if (pageRenders.get(number) === record) pageRenders.delete(number);
     });
 
